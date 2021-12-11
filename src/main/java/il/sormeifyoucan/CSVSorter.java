@@ -133,15 +133,6 @@ public class CSVSorter {
         List<String> chunksCp = new ArrayList<>(chunks);
         Collections.sort(chunksCp, (a,b) -> getColumnStringFromCSVSingleLine(a,colForSort).compareTo(getColumnStringFromCSVSingleLine(b,colForSort)));
         return chunksCp;
-        //return Collections.sort(chunks, (a, b) -> getColumnStringFromCSVSingleLine(a,colForSort).compareTo(getColumnStringFromCSVSingleLine(b,colForSort)));
-       /* return chunks.stream()
-//                .map(x -> removeSuffixIfExists(x, ","))
-//                .map(x -> x.split("="))
-                .collect(Collectors.toMap(a -> getColumnStringFromCSVSingleLine(a,colForSort), a -> a))
-                .entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(e -> e.getValue())
-                .collect(Collectors.toList());*/
     }
 
 
