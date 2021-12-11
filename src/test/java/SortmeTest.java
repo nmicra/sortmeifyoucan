@@ -19,6 +19,18 @@ public class SortmeTest {
 
 
     @Test
+    public void testChunksFromFile() throws IOException {
+        List<String> chunk1 = csvSorter.getChunk("C:\\workspace\\sortmeifyoucan\\src\\main\\resources\\cities.csv", 8, 1);
+        List<String> chunk2 = csvSorter.getChunk("C:\\workspace\\sortmeifyoucan\\src\\main\\resources\\cities.csv", 10, 2);
+
+        assertTrue(chunk1.size() == 8);
+        assertTrue(chunk2.size() == 10);
+        chunk1.forEach(System.out::println);
+        System.out.println("========");
+        chunk2.forEach(System.out::println);
+    }
+
+    @Test
     public void createChunksAndWriteItToTheFile() throws IOException {
         int numOfRecords = 103;
         String file = csvSorter.writeChunksToTempFile(createRandomCsv(numOfRecords));

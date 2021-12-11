@@ -113,12 +113,9 @@ public class CSVSorter {
      */
     public List<String> getChunk(String srcFilePath, int numOfRecords, int offset) {
 
-        AtomicInteger chunkIdx = new AtomicInteger(0);
-
         try (Stream<String> stream = Files.lines(Paths.get(new File(srcFilePath).toURI()))) {
             return stream.skip(numOfRecords * offset)
-                    .peek(x -> chunkIdx.incrementAndGet())
-                    .takeWhile(x -> chunkIdx.get() <= numOfRecords)
+                    .limit(numOfRecords)
                     .collect(Collectors.toList());
         } catch (IOException e) {
             e.printStackTrace();
