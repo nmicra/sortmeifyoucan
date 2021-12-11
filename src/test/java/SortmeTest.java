@@ -9,8 +9,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-import static il.sormeifyoucan.util.GeneralUtils.getLineCount;
-import static il.sormeifyoucan.util.GeneralUtils.randomStringWithLength;
+import static il.sormeifyoucan.util.GeneralUtils.*;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,23 +29,25 @@ public class SortmeTest {
 
     @Test
     public void sortChunksTest() {
-        List lst = new ArrayList();
-        lst.add("zzz=123");
-        lst.add("yyy=ooo");
-        lst.add("abc=abc");
-        lst.add("aaa=bbbb");
-        lst.add("cba=cba");
-        List sortedChunks = csvSorter.sortChunks(lst);
-        assertTrue(sortedChunks.get(0).equals("aaa=bbbb"));
-        assertTrue(sortedChunks.get(lst.size()-1).equals("zzz=123"));
+        List<String> lst = new ArrayList();
+        lst.add("   46,   35,   59, \"N\",    120,   30,   36, \"W\", \"Yakima\", WA");
+        lst.add("36,    5,   59, \"N\",     80,   15,    0, \"W\", \"Winston-Salem\", NC");
+        lst.add("38,   42,   35, \"N\",     93,   13,   48, \"W\", \"Sedalia\", MO");
+        lst.add("39,   11,   23, \"N\",     78,    9,   36, \"W\", \"Winchester\", VA");
+        lst.add("41,    9,   35, \"N\",     81,   14,   23, \"W\", \"Ravenna\", OH");
+        List<String> sortedChunks = csvSorter.sortChunks(lst,8);
+
+        assertTrue(getColumnStringFromCSVSingleLine(sortedChunks.get(0),9).equals("OH"));
+        assertTrue(getColumnStringFromCSVSingleLine(sortedChunks.get(lst.size()-1),9).equals("WA"));
     }
 
     @Test
+    @Disabled
     public void createCSVFileAndSortItEndToEnd() {
         int numOfRecords = 103;
         String file = csvSorter.writeChunksToTempFile(createRandomCsv(numOfRecords));
         System.out.println(">>> Not Sorted File: " + file);
-        csvSorter.sortCSV(file,"./dest/sorted.csv",5);
+        csvSorter.sortCSV(file,"./dest/sorted.csv",5,8);
         System.out.println(">>> End.");
     }
 

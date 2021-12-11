@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -30,58 +31,47 @@ public class CSVSorter {
     /**
      * Main entry-point to sort CSV file
      *
-     * @param srcFilePath - unsorted csv file
-     * @param dstFilePath - destination(sorted) csv file
+     * @param srcFilePath          - unsorted csv file
+     * @param dstFilePath          - destination(sorted) csv file
      * @param numOfRecordsInMemory - num of records allowed in memory
      */
-    public void sortCSV(String srcFilePath, String dstFilePath, int numOfRecordsInMemory) {
+    public void sortCSV(String srcFilePath, String dstFilePath, int numOfRecordsInMemory, int colForSorting) {
         try {
             long lineCount = getLineCount(new File(srcFilePath));
 
-            // 1. Create and sort initial chunks with async execution
             int numOfInitialChunks = (int) (lineCount / numOfRecordsInMemory);
 
-            List<CompletableFuture<List<String>>> futuresSortedChunks = new ArrayList<>();
+            // 1. Create Initial Sorted Temp Files
+            List<CompletableFuture<String>> sortedInitialTempFilesFutures = new ArrayList<>();
             for (int i = 0; i <= numOfInitialChunks; i++) {
                 int finalI = i; // compiler demand.
-                CompletableFuture<List<String>> sortedChunksFuture = CompletableFuture
-                        .supplyAsync(() -> sortChunks(getChunk(srcFilePath, numOfRecordsInMemory, finalI)), executorService);
-                futuresSortedChunks.add(sortedChunksFuture);
+
+                CompletableFuture<String> sortedTempFiles = CompletableFuture
+                        .supplyAsync(() -> sortChunks(getChunk(srcFilePath, numOfRecordsInMemory, finalI), colForSorting), executorService)
+                        .thenApplyAsync(chunks -> {
+                            String tempFile = writeChunksToTempFile(chunks);
+                            return tempFile;
+                        });
+                sortedInitialTempFilesFutures.add(sortedTempFiles);
             }
-
             // wait till all async executors complete
-            CompletableFuture.allOf(futuresSortedChunks.toArray(new CompletableFuture[0])).join();
+            CompletableFuture.allOf(sortedInitialTempFilesFutures.toArray(new CompletableFuture[0])).join();
 
-            // 2. Create Initial Sorted Temp Files
-            List<CompletableFuture<String>> initialTempFilesFutures = new ArrayList<>();
-            futuresSortedChunks.forEach(futureChunk -> {
-                try {
-                    List<String> chunks = futureChunk.get();
-                    CompletableFuture<String> sortedTempFileFuture = CompletableFuture
-                            .supplyAsync(() -> writeChunksToTempFile(chunks), executorService);
-                    initialTempFilesFutures.add(sortedTempFileFuture);
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-            // wait till all async executors complete
-            CompletableFuture.allOf(initialTempFilesFutures.toArray(new CompletableFuture[0])).join();
-
-            // 3. Merge Sorted Temp Files
-            List<CompletableFuture<String>> mergedTempSortedFiles = initialTempFilesFutures;
+            // 2. Merge Sorted Temp Files
+            List<CompletableFuture<String>> mergedTempSortedFiles = sortedInitialTempFilesFutures;
             while (mergedTempSortedFiles.size() > 1) {
                 List<CompletableFuture<String>> intermediateTempSortedFiles = new ArrayList<>();
                 for (int i = 0; i < mergedTempSortedFiles.size(); i += 2) {
                     try {
-                        if (i+1 >= mergedTempSortedFiles.size()){
-                                // case when odd number of temp files, but we merge always 2
+                        if (i + 1 >= mergedTempSortedFiles.size()) {
+                            // case when odd number of temp files, but we merge always 2
                             intermediateTempSortedFiles.add(mergedTempSortedFiles.get(i));
                             break;
                         }
                         String leftFilePath = mergedTempSortedFiles.get(i).get();
                         String rightFilePath = mergedTempSortedFiles.get(i + 1).get();
                         CompletableFuture<String> mergedTempFileFuture = CompletableFuture
-                                .supplyAsync(() -> mergeTempFiles(leftFilePath, rightFilePath), executorService);
+                                .supplyAsync(() -> mergeTempFiles(leftFilePath, rightFilePath, colForSorting), executorService);
                         intermediateTempSortedFiles.add(mergedTempFileFuture);
                     } catch (InterruptedException | ExecutionException e) {
                         throw new RuntimeException(e);
@@ -94,7 +84,7 @@ public class CSVSorter {
                 String finalMergedFiles = mergedTempSortedFiles.get(0).get();
                 System.out.println(">>>> result before moving file => " + finalMergedFiles);
                 Path mvFinalFile = Files.move(Paths.get(finalMergedFiles), Paths.get(dstFilePath));
-                if (mvFinalFile != null){
+                if (mvFinalFile != null) {
                     System.out.println(">>>> file successfully moved to:  " + dstFilePath);
                     Files.deleteIfExists(Paths.get(finalMergedFiles));
                 } else {
@@ -115,9 +105,10 @@ public class CSVSorter {
 
     /**
      * returns chunks of strings from original csv key-val
-     * @param srcFilePath - the absolute path to csv file
+     *
+     * @param srcFilePath  - the absolute path to csv file
      * @param numOfRecords - number of records in chunks
-     * @param offset - the offset from which we should extract the chunks
+     * @param offset       - the offset from which we should extract the chunks
      * @return - chunk of csv records, from provided file
      */
     public List<String> getChunk(String srcFilePath, int numOfRecords, int offset) {
@@ -137,23 +128,29 @@ public class CSVSorter {
 
     /**
      * Sorts list of key=val strings
+     *
      * @param chunks - list of key=val strings
      * @return - sorted by key(string value)
      */
-    public List<String> sortChunks(List<String> chunks) {
-        return chunks.stream()
+    public List<String> sortChunks(List<String> chunks, int colForSort) {
+        List<String> chunksCp = new ArrayList<>(chunks);
+        Collections.sort(chunksCp, (a,b) -> getColumnStringFromCSVSingleLine(a,colForSort).compareTo(getColumnStringFromCSVSingleLine(b,colForSort)));
+        return chunksCp;
+        //return Collections.sort(chunks, (a, b) -> getColumnStringFromCSVSingleLine(a,colForSort).compareTo(getColumnStringFromCSVSingleLine(b,colForSort)));
+       /* return chunks.stream()
 //                .map(x -> removeSuffixIfExists(x, ","))
-                .map(x -> x.split("="))
-                .collect(Collectors.toMap(a -> a[0], a -> a[1]))
+//                .map(x -> x.split("="))
+                .collect(Collectors.toMap(a -> getColumnStringFromCSVSingleLine(a,colForSort), a -> a))
                 .entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(e -> e.getKey() + "=" + e.getValue())
-                .collect(Collectors.toList());
+                .map(e -> e.getValue())
+                .collect(Collectors.toList());*/
     }
 
 
     /**
      * The method writes chunks to the temp file
+     *
      * @param chunks - sorted chunks of csv key=val
      * @return - absolute file name
      */
@@ -178,11 +175,12 @@ public class CSVSorter {
 
     /**
      * Performs merge-sort between 2 temp (sorted) files.
-     * @param leftFile - first sorted file
+     *
+     * @param leftFile  - first sorted file
      * @param rightFile - second sorted file
      * @return - merged sorted result / absolute path
      */
-    public String mergeTempFiles(String leftFile, String rightFile) {
+    public String mergeTempFiles(String leftFile, String rightFile, int colForSorting) {
 
         File destFile = null;
         try {
@@ -200,7 +198,7 @@ public class CSVSorter {
 
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(destFile))) {
                 while (leftOffset < leftLines.size() && rightOffset < rightLines.size()) {
-                    if (keyFromKeyValStr(leftLines.get(leftOffset)).compareTo(keyFromKeyValStr(rightLines.get(rightOffset))) < 0) {
+                    if (getColumnStringFromCSVSingleLine(leftLines.get(leftOffset),colForSorting).compareTo(getColumnStringFromCSVSingleLine(rightLines.get(rightOffset),colForSorting)) < 0) {
                         writer.append(leftLines.get(leftOffset) + "\r\n");
                         leftOffset++;
                     } else {

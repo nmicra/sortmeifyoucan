@@ -61,4 +61,9 @@ public class GeneralUtils {
             return lines.count();
         }
     }
+
+    public static String getColumnStringFromCSVSingleLine(String line, int columnNum) {
+        String[] strings = line.split(",");
+        return strings[columnNum].trim();
+    }
 }
